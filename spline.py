@@ -308,12 +308,66 @@ def plot_periodic_spline(bs: PeriodicBSpline, ax):
     ax.plot(*bs(t).T, 'k')
 
 
+def solve_periodic_interpolant_numpy(data_points):
+    n = len(data_points)
+    m = 4*np.eye(n)
+    m[1:, :-1] += np.eye(n-1)
+    m[:-1, 1:] += np.eye(n-1)
+    m[-1, 0] += 1
+    m[0, -1] += 1
+    result = np.linalg.inv(m) @ (6 * data_points)
+    r2 = solve_periodic_interpolant_linear(data_points)
+    # print(result)
+    # print(r2)
+    assert np.allclose(result, r2)
+    return result
+
+
+def solve_periodic_interpolant_linear(data_points):
+    '''
+    Implement Gaussian elimination of the 1-4-1-matrix
+    based on the pseudocode in [PB] Section 5.2.
+
+    PB: http://www.bakoma-tex.com/doc/generic/pst-bspline/pst-bspline-doc.pdf
+    '''
+    result = np.array(data_points, dtype=np.float64)
+    result *= 6
+    n = len(result)
+    last_row = np.zeros(n)
+    last_column = np.zeros(n-1)
+    last_row[0] = last_row[n-2] = last_column[0] = last_column[n-2] = 1
+    last_row[n-1] = 4
+
+    m = [1/4]
+    # Multiply first row by m[0]
+    last_column[0] *= m[0]
+    result[0] *= m[0]
+    for k in range(1, n-1):
+        m.append(1 / (4 - m[-1]))
+        # Subtract normalized row k-1 from row k and renormalize row k
+        last_column[k] = m[k] * (last_column[k] - last_column[k-1])
+        result[k] = m[k] * (result[k] - result[k-1])
+        # Subtract normalized row k-1 times last_row[k-1] from row n
+        last_row[k] -= m[k-1] * last_row[k-1]
+        last_row[n-1] -= last_column[k-1] * last_row[k-1]
+        result[n-1] -= result[k-1] * last_row[k-1]
+    # Subtract row n-2 times last_row[n-2] from row n-1,
+    # renormalize by 1/last_row[n-1]
+    last_row[n-1] -= last_row[n-2] * last_column[n-2]
+    result[n-1] = (result[n-1] - result[n-2] * last_row[n-2]) / last_row[n-1]
+    # Work back
+    result[n-2] -= last_column[n-2] * result[n-1]
+    for k in range(n-3, -1, -1):
+        result[k] -= m[k] * result[k+1] + last_column[k] * result[n-1]
+    return result
+
+
 class PeriodicSplineInterpolant:
     '''
     Implements "Periodic spline interpolation", discussed briefly in [DD]
     end of section 9.  See also [PB] 5.2.
 
-    PB: http://mirror.hmc.edu/ctan/graphics/pstricks/contrib/pst-bspline/pst-bspline-doc.pdf
+    PB: http://www.bakoma-tex.com/doc/generic/pst-bspline/pst-bspline-doc.pdf
     '''
     def __init__(self, data_points):
         data_points = np.asarray(data_points)
@@ -326,17 +380,8 @@ class PeriodicSplineInterpolant:
             raise ValueError('invalid number of dimensions (expected 1 or 2)')
         n = len(data_points)
 
-        m = 4*np.eye(n)
-        m[1:, :-1] += np.eye(n-1)
-        m[:-1, 1:] += np.eye(n-1)
-        m[-1, 0] += 1
-        m[0, -1] += 1
-        minv = np.linalg.inv(m)
-
-        v = 6*data_points
-
+        self.control_points = solve_periodic_interpolant_numpy(data_points)
         self.data_points = data_points
-        self.control_points = minv @ v
         self.b_spline = PeriodicBSpline(self.control_points)
 
     def __call__(self, t):
