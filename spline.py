@@ -170,9 +170,8 @@ class BSpline:
 
 
 def plot_spline(bs: BSpline, ax):
-    t = np.linspace(0, 1, 200)
-    ax.plot(*bs(t).T, 'k')
     subcontrol = bs.subcontrol
+    assert (len(subcontrol) - 4) % 3 == 0
 
     for i in range(0, (len(subcontrol) - 4) // 3):
         apex = 2*subcontrol[3*i+2] - subcontrol[3*i+1]
@@ -183,6 +182,8 @@ def plot_spline(bs: BSpline, ax):
     dashed[3:-2:3] = dashed[2:-3:3] + (dashed[4:-1:3] - dashed[2:-3:3]) / 2
     ax.plot(*subcontrol.T, '--g')
     ax.plot(*subcontrol[1:-1].T, 'og')
+    t = np.linspace(0, 1, 200)
+    ax.plot(*bs(t).T, 'k')
 
 
 def plot_construction(points=None, filename='construction.png'):
@@ -261,6 +262,113 @@ def homework(points=None, filename='homework.png'):
     fig.savefig(filename)
 
 
+class PeriodicBSpline:
+    '''
+    Implementation of "periodic uniform cubic B-spline curves" [DD].
+    Periodic instead of relaxed.
+
+    DD: http://www.math.ucla.edu/%7Ebaker/149.1.02w/handouts/dd_splines.pdf
+    '''
+
+    def __init__(self, control_points):
+        control_points = np.asarray(control_points)
+        shape = control_points.shape[1:]
+        legs = np.roll(control_points, -1, axis=0) - control_points
+        # legs[i] = control_points[i+1] - control_points[i]
+        subcontrol = np.empty((3 * len(control_points) + 1,) + shape)
+        v1 = legs / 3
+        subcontrol[1:-1:3] = control_points + v1
+        subcontrol[2:-1:3] = control_points + 2 * v1
+        subcontrol[:-1:3] = (subcontrol[1:-1:3] +
+                             np.roll(subcontrol[2:-1:3], 1, axis=0)) / 2
+        subcontrol[-1] = subcontrol[0]
+        pieces = []
+        for i in range(len(control_points)):
+            pieces.append(Bezier3(subcontrol[3*i:3*i+4]))
+        self.subcontrol = subcontrol
+        self.inner = Piecewise(pieces)
+
+    def __call__(self, t):
+        return self.inner(t)
+
+
+def plot_periodic_spline(bs: PeriodicBSpline, ax):
+    subcontrol = bs.subcontrol
+
+    for i in range(0, (len(subcontrol) - 1) // 3):
+        apex = 2*subcontrol[3*i+2] - subcontrol[3*i+1]
+        p = subcontrol[(3*i+4) % (len(subcontrol) - 1)]
+        ax.plot(*np.transpose([subcontrol[3*i+2], apex, p]),
+                '-r')
+
+    dashed = np.copy(subcontrol)
+    dashed[3:-2:3] = dashed[2:-3:3] + (dashed[4:-1:3] - dashed[2:-3:3]) / 2
+    print(subcontrol)
+    ax.plot(*subcontrol.T, 'o--g')
+    t = np.linspace(0, 1, 200)
+    ax.plot(*bs(t).T, 'k')
+
+
+class PeriodicSplineInterpolant:
+    '''
+    Implements "Periodic spline interpolation", discussed briefly in [DD]
+    end of section 9.  See also [PB] 5.2.
+
+    PB: http://mirror.hmc.edu/ctan/graphics/pstricks/contrib/pst-bspline/pst-bspline-doc.pdf
+    '''
+    def __init__(self, data_points):
+        data_points = np.asarray(data_points)
+        if data_points.ndim == 1:
+            data_points = data_points.reshape(-1, 1)
+            self._output_shape = ()
+        elif data_points.ndim == 2:
+            self._output_shape = (-1,)
+        else:
+            raise ValueError('invalid number of dimensions (expected 1 or 2)')
+        n = len(data_points)
+
+        m = 4*np.eye(n)
+        m[1:, :-1] += np.eye(n-1)
+        m[:-1, 1:] += np.eye(n-1)
+        m[-1, 0] += 1
+        m[0, -1] += 1
+        minv = np.linalg.inv(m)
+
+        v = 6*data_points
+
+        self.data_points = data_points
+        self.control_points = minv @ v
+        self.b_spline = PeriodicBSpline(self.control_points)
+
+    def __call__(self, t):
+        t = np.asarray(t)
+        output_shape = t.shape + self._output_shape
+        return self.b_spline(t.ravel()).reshape(output_shape)
+
+
+def plot_periodic(points=None, filename='periodic.png'):
+    import matplotlib.pyplot as plt
+
+    if points is None:
+        # Recreate [DD] Figure 14
+        points = [
+            [-1, 2],
+            [1, 4],
+            [4, 3],
+            [1, 0],
+        ]
+
+    points = np.asarray(points)
+    curve = PeriodicSplineInterpolant(points)
+    fig, ax = plt.subplots(figsize=(10, 8))
+    ax.grid()
+    print(curve.control_points)
+    plot_periodic_spline(curve.b_spline, ax)
+    ax.plot(*points.T, 'ob')
+    fig.savefig(filename, dpi=300)
+
+
 if __name__ == '__main__':
+    plot_periodic()
     homework()
     plot_construction()
