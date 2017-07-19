@@ -30,6 +30,7 @@ class BezierN:
 
     def __init__(self, control_points):
         control_points = np.asarray(control_points)
+        self._dim_shape = control_points.shape[1:]
         if control_points.ndim == 2:
             self.c = control_points
         elif control_points.ndim == 1:
@@ -66,6 +67,7 @@ class Bezier3:
 
     def __init__(self, control_points):
         control_points = np.asarray(control_points)
+        self._dim_shape = control_points.shape[1:]
         if control_points.ndim == 2:
             self.c = control_points
         elif control_points.ndim == 1:
@@ -98,7 +100,7 @@ class Piecewise:
     >>> def curve(t):
     ...     print('curve() called with', t)
     ...     return t
-    >>> curve._output_shape = ()
+    >>> curve._output_shape = curve._dim_shape = ()
     >>> c = Piecewise([curve, curve])
     >>> print(c([0, 0.5, 0.1, 0.2, 0.9, 1]))
     curve() called with [ 0.   0.2  0.4]
@@ -111,13 +113,14 @@ class Piecewise:
             raise ValueError('curves list must not be empty')
         self._curves = curves
         self._output_shape = curves[0]._output_shape
+        self._dim_shape = curves[0]._dim_shape
 
     def __call__(self, t):
         t = np.asarray(t)
         output_shape = t.shape + self._output_shape
-        t = t.reshape((t.size,) + self._output_shape)
+        t = t.ravel()
 
-        res = np.empty(output_shape)
+        res = np.empty((t.size,) + self._dim_shape)
         q, r = np.divmod(t * len(self._curves), 1.0)
         q = q.astype(np.intp)
 
@@ -142,20 +145,24 @@ class BSpline:
     '''
 
     def __init__(self, control_points):
+        control_points = np.asarray(control_points)
+        shape = control_points.shape[1:]
         legs = np.diff(control_points, axis=0)
         v1 = legs / 3
         l1 = control_points[1:] - v1
         l2 = control_points[:-1] + v1
-        subcontrol = np.empty(3 * len(control_points) - 2)
+        subcontrol = np.empty((3 * len(control_points) - 2,) + shape)
+        subcontrol[:] = -11
         subcontrol[0] = control_points[0]
         subcontrol[-1] = control_points[-1]
         mid = l1[:-1] + (l2[1:] - l1[:-1]) / 2
-        subcontrol[3:-1:3] = mid
-        subcontrol[1:-3:3] = l2
-        subcontrol[2:-2:3] = l1
+        subcontrol[3:-3:3] = mid
+        subcontrol[1:-2:3] = l2
+        subcontrol[2:-1:3] = l1
         pieces = []
         for i in range(len(control_points)-1):
             pieces.append(Bezier3(subcontrol[3*i:3*i+4]))
+        self.subcontrol = subcontrol
         self.inner = Piecewise(pieces)
 
     def __call__(self, t):
@@ -166,17 +173,35 @@ def plot_construction(points=None, filename='construction.png'):
     import matplotlib.pyplot as plt
 
     if points is None:
-        points = np.array([
+        # Recreate [DD] Figure 11
+        points = [
             [15.0301, 13.6246],
             [73.6897, 72.2842],
             [133.005, 73.2673],
             [251.307, 13.6246],
             [310.294, 72.9396],
             [192.647, 131.599],
-        ])
+        ]
 
+    points = np.asarray(points)
     bs = BSpline(points)
     fig, ax = plt.subplots()
-    ax.plot(*points.T, 's')
-    subcontrol = np.array([piece.c for piece in bs.inner.pieces])
-    subcontrol = np.append
+    t = np.linspace(0, 1, 200)
+    ax.plot(*bs(t).T, 'k')
+    subcontrol = bs.subcontrol
+
+    for i in range(0, len(points) - 2):
+        apex = 2*subcontrol[3*i+2] - subcontrol[3*i+1]
+        ax.plot(*np.transpose([subcontrol[3*i+2], apex, subcontrol[3*i+4]]),
+                '-r')
+
+    dashed = np.copy(subcontrol)
+    dashed[3:-2:3] = dashed[2:-3:3] + (dashed[4:-1:3] - dashed[2:-3:3]) / 2
+    ax.plot(*subcontrol.T, '--g')
+    ax.plot(*subcontrol[1:-1].T, 'og')
+    ax.plot(*points.T, 'sb')
+    fig.savefig(filename)
+
+
+if __name__ == '__main__':
+    plot_construction()
