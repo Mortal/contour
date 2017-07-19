@@ -132,3 +132,51 @@ class Piecewise:
             res[f] = self._curves[idx](r[f])
 
         return res.reshape(output_shape)
+
+
+class BSpline:
+    '''
+    Implementation of "relaxed uniform cubic B-spline curves" [DD].
+
+    DD: http://www.math.ucla.edu/%7Ebaker/149.1.02w/handouts/dd_splines.pdf
+    '''
+
+    def __init__(self, control_points):
+        legs = np.diff(control_points, axis=0)
+        v1 = legs / 3
+        l1 = control_points[1:] - v1
+        l2 = control_points[:-1] + v1
+        subcontrol = np.empty(3 * len(control_points) - 2)
+        subcontrol[0] = control_points[0]
+        subcontrol[-1] = control_points[-1]
+        mid = l1[:-1] + (l2[1:] - l1[:-1]) / 2
+        subcontrol[3:-1:3] = mid
+        subcontrol[1:-3:3] = l2
+        subcontrol[2:-2:3] = l1
+        pieces = []
+        for i in range(len(control_points)-1):
+            pieces.append(Bezier3(subcontrol[3*i:3*i+4]))
+        self.inner = Piecewise(pieces)
+
+    def __call__(self, t):
+        return self.inner(t)
+
+
+def plot_construction(points=None, filename='construction.png'):
+    import matplotlib.pyplot as plt
+
+    if points is None:
+        points = np.array([
+            [15.0301, 13.6246],
+            [73.6897, 72.2842],
+            [133.005, 73.2673],
+            [251.307, 13.6246],
+            [310.294, 72.9396],
+            [192.647, 131.599],
+        ])
+
+    bs = BSpline(points)
+    fig, ax = plt.subplots()
+    ax.plot(*points.T, 's')
+    subcontrol = np.array([piece.c for piece in bs.inner.pieces])
+    subcontrol = np.append
