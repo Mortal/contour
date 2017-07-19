@@ -303,7 +303,6 @@ def plot_periodic_spline(bs: PeriodicBSpline, ax):
 
     dashed = np.copy(subcontrol)
     dashed[3:-2:3] = dashed[2:-3:3] + (dashed[4:-1:3] - dashed[2:-3:3]) / 2
-    print(subcontrol)
     ax.plot(*subcontrol.T, 'o--g')
     t = np.linspace(0, 1, 200)
     ax.plot(*bs(t).T, 'k')
@@ -350,19 +349,20 @@ def plot_periodic(points=None, filename='periodic.png'):
     import matplotlib.pyplot as plt
 
     if points is None:
-        # Recreate [DD] Figure 14
+        # Recreate [PB] Page 16
         points = [
-            [-1, 2],
-            [1, 4],
-            [4, 3],
-            [1, 0],
+            (0, 1),
+            (2, 0),
+            (5, 2),
+            (6, 4),
+            (4, 5),
+            (2, 4),
         ]
 
     points = np.asarray(points)
     curve = PeriodicSplineInterpolant(points)
     fig, ax = plt.subplots(figsize=(10, 8))
     ax.grid()
-    print(curve.control_points)
     plot_periodic_spline(curve.b_spline, ax)
     ax.plot(*points.T, 'ob')
     fig.savefig(filename, dpi=300)
