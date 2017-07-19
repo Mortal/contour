@@ -41,7 +41,7 @@ class BezierN:
     def _eval(self, i, j, t, c):
         if i + 1 == j:
             return np.tile(c[i].reshape(1, -1), (len(t), 1))
-        return (1 - t) * self._eval(i+1, j, t, c) + t * self._eval(i, j-1, t, c)
+        return (1 - t) * self._eval(i, j-1, t, c) + t * self._eval(i+1, j, t, c)
 
     def __call__(self, t):
         t = np.asarray(t)
