@@ -169,6 +169,22 @@ class BSpline:
         return self.inner(t)
 
 
+def plot_spline(bs: BSpline, ax):
+    t = np.linspace(0, 1, 200)
+    ax.plot(*bs(t).T, 'k')
+    subcontrol = bs.subcontrol
+
+    for i in range(0, (len(subcontrol) - 4) // 3):
+        apex = 2*subcontrol[3*i+2] - subcontrol[3*i+1]
+        ax.plot(*np.transpose([subcontrol[3*i+2], apex, subcontrol[3*i+4]]),
+                '-r')
+
+    dashed = np.copy(subcontrol)
+    dashed[3:-2:3] = dashed[2:-3:3] + (dashed[4:-1:3] - dashed[2:-3:3]) / 2
+    ax.plot(*subcontrol.T, '--g')
+    ax.plot(*subcontrol[1:-1].T, 'og')
+
+
 def plot_construction(points=None, filename='construction.png'):
     import matplotlib.pyplot as plt
 
@@ -183,25 +199,68 @@ def plot_construction(points=None, filename='construction.png'):
             [192.647, 131.599],
         ]
 
+    fig, ax = plt.subplots()
     points = np.asarray(points)
     bs = BSpline(points)
-    fig, ax = plt.subplots()
-    t = np.linspace(0, 1, 200)
-    ax.plot(*bs(t).T, 'k')
-    subcontrol = bs.subcontrol
-
-    for i in range(0, len(points) - 2):
-        apex = 2*subcontrol[3*i+2] - subcontrol[3*i+1]
-        ax.plot(*np.transpose([subcontrol[3*i+2], apex, subcontrol[3*i+4]]),
-                '-r')
-
-    dashed = np.copy(subcontrol)
-    dashed[3:-2:3] = dashed[2:-3:3] + (dashed[4:-1:3] - dashed[2:-3:3]) / 2
-    ax.plot(*subcontrol.T, '--g')
-    ax.plot(*subcontrol[1:-1].T, 'og')
+    plot_spline(bs, ax)
     ax.plot(*points.T, 'sb')
     fig.savefig(filename)
 
 
+class SplineInterpolant:
+    '''
+    Implements "Interpolation by relaxed cubic splines" [DD].
+    '''
+    def __init__(self, data_points):
+        data_points = np.asarray(data_points)
+        if data_points.ndim == 1:
+            data_points = data_points.reshape(-1, 1)
+            self._output_shape = ()
+        elif data_points.ndim == 2:
+            self._output_shape = (-1,)
+        else:
+            raise ValueError('invalid number of dimensions (expected 1 or 2)')
+        n = len(data_points)
+
+        m = 4*np.eye(n - 2)
+        m[1:, :-1] += np.eye(n - 3)
+        m[:-1, 1:] += np.eye(n - 3)
+        minv = np.linalg.inv(m)
+
+        v = 6*data_points[1:-1]
+        v[0] -= data_points[0]
+        v[-1] -= data_points[-1]
+
+        self.data_points = data_points
+        self.control_points = np.concatenate(
+            ([data_points[0]], minv @ v, [data_points[-1]]))
+        self.b_spline = BSpline(self.control_points)
+
+    def __call__(self, t):
+        t = np.asarray(t)
+        output_shape = t.shape + self._output_shape
+        return self.b_spline(t.ravel()).reshape(output_shape)
+
+
+def homework(points=None, filename='homework.png'):
+    import matplotlib.pyplot as plt
+
+    if points is None:
+        # Recreate [DD] Figure 14
+        points = [
+            [1, -1],
+            [-1, 2],
+            [1, 4],
+            [4, 3],
+            [7, 5],
+        ]
+
+    curve = SplineInterpolant(points)
+    fig, ax = plt.subplots()
+    plot_spline(curve.b_spline, ax)
+    fig.savefig(filename)
+
+
 if __name__ == '__main__':
+    homework()
     plot_construction()
