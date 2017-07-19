@@ -91,3 +91,44 @@ class Bezier3:
         c03 = r * c02 + t * c13
 
         return c03.reshape(output_shape)
+
+
+class Piecewise:
+    '''
+    >>> def curve(t):
+    ...     print('curve() called with', t)
+    ...     return t
+    >>> curve._output_shape = ()
+    >>> c = Piecewise([curve, curve])
+    >>> print(c([0, 0.5, 0.1, 0.2, 0.9, 1]))
+    curve() called with [ 0.   0.2  0.4]
+    curve() called with [ 0.   0.8  1. ]
+    [ 0.   0.   0.2  0.4  0.8  1. ]
+    '''
+
+    def __init__(self, curves):
+        if len(curves) == 0:
+            raise ValueError('curves list must not be empty')
+        self._curves = curves
+        self._output_shape = curves[0]._output_shape
+
+    def __call__(self, t):
+        t = np.asarray(t)
+        output_shape = t.shape + self._output_shape
+        t = t.reshape((t.size,) + self._output_shape)
+
+        res = np.empty(output_shape)
+        q, r = np.divmod(t * len(self._curves), 1.0)
+        q = q.astype(np.intp)
+
+        lo = q < 0
+        hi = q >= len(self._curves)
+        r[lo] = q[lo] = 0
+        r[hi] = 1
+        q[hi] = len(self._curves) - 1
+
+        for idx in np.unique(q):
+            f = (q == idx)
+            res[f] = self._curves[idx](r[f])
+
+        return res.reshape(output_shape)
